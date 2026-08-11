@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- xUnit v3 테스트 프로젝트는 실행 파일(Exe) 형태로 동작합니다. -->
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 테스트 실행/발견 인프라 -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <!-- xUnit v3: 최신 세대 테스트 프레임워크 -->
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <!-- 커버리지 수집기 -->
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <!-- FluentAssertions 무료 대안: FluentAssertions 7 포크(MIT). .Should() 문법 동일 -->
+    <PackageReference Include="AwesomeAssertions" Version="9.5.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 데모 대상 라이브러리 참조 -->
+    <ProjectReference Include="..\DotNet_10.Features\DotNet_10.Features.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

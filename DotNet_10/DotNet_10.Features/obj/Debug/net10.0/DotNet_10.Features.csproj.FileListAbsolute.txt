@@ -1,0 +1,11 @@
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/bin/Debug/net10.0/DotNet_10.Features.deps.json
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/bin/Debug/net10.0/DotNet_10.Features.dll
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/bin/Debug/net10.0/DotNet_10.Features.pdb
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/obj/Debug/net10.0/DotNet_10.Features.GeneratedMSBuildEditorConfig.editorconfig
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/obj/Debug/net10.0/DotNet_10.Features.AssemblyInfoInputs.cache
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/obj/Debug/net10.0/DotNet_10.Features.AssemblyInfo.cs
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/obj/Debug/net10.0/DotNet_10.Features.csproj.CoreCompileInputs.cache
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/obj/Debug/net10.0/DotNet_10.Features.dll
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/obj/Debug/net10.0/refint/DotNet_10.Features.dll
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/obj/Debug/net10.0/DotNet_10.Features.pdb
+/Users/john/Projects/Research/DotNet_10/DotNet_10.Features/obj/Debug/net10.0/ref/DotNet_10.Features.dll
