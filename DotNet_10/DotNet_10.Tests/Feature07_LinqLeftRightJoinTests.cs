@@ -3,25 +3,25 @@ using DotNet_10.Features;
 
 namespace DotNet_10.Tests;
 
-// [Feature07] LeftJoin / RightJoin — 매칭 없는 쪽이 null로 보존되는지 확인
+// [Feature07] LeftJoin / RightJoin - check the unmatched side is kept as null
 public class LinqLeftRightJoinTests
 {
     private static readonly User[] Users =
     [
         new(1, "kim"),
         new(2, "lee"),
-        new(3, "park"), // 구매 없음 → LeftJoin에서 Product null
+        new(3, "park"), // no purchase -> Product is null in LeftJoin
     ];
 
     private static readonly Purchase[] Purchases =
     [
         new(1, "keyboard"),
         new(2, "mouse"),
-        new(99, "ghost"), // 사용자 없음 → RightJoin에서 User null
+        new(99, "ghost"), // no user -> User is null in RightJoin
     ];
 
     [Fact]
-    public void LeftJoin_모든_사용자를_유지하고_구매없으면_null()
+    public void LeftJoin_keeps_all_users_and_null_when_no_purchase()
     {
         var result = LinqJoinDemo.UsersWithPurchases(Users, Purchases).ToArray();
 
@@ -34,7 +34,7 @@ public class LinqLeftRightJoinTests
     }
 
     [Fact]
-    public void RightJoin_모든_구매를_유지하고_사용자없으면_null()
+    public void RightJoin_keeps_all_purchases_and_null_when_no_user()
     {
         var result = LinqJoinDemo.PurchasesWithUsers(Users, Purchases).ToArray();
 

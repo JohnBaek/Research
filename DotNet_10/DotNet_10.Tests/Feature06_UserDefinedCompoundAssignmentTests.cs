@@ -3,11 +3,11 @@ using DotNet_10.Features;
 
 namespace DotNet_10.Tests;
 
-// [Feature06] 사용자 정의 복합 대입 연산자 — += / -= 가 제자리 수정하는지 확인
+// [Feature06] User-defined compound assignment - check += / -= mutate in place
 public class UserDefinedCompoundAssignmentTests
 {
     [Fact]
-    public void PlusEquals_가_제자리에서_누적한다()
+    public void PlusEquals_accumulates_in_place()
     {
         var acc = new Accumulator(10);
 
@@ -17,7 +17,7 @@ public class UserDefinedCompoundAssignmentTests
     }
 
     [Fact]
-    public void MinusEquals_가_제자리에서_감소시킨다()
+    public void MinusEquals_decreases_in_place()
     {
         var acc = new Accumulator(10);
 

@@ -3,11 +3,11 @@ using DotNet_10.Features;
 
 namespace DotNet_10.Tests;
 
-// [Feature05] 수식어 붙은 람다 매개변수 — out 람다가 실제로 파싱하는지 확인
+// [Feature05] Lambda parameters with modifiers - check the 'out' lambda actually parses
 public class LambdaParameterModifiersTests
 {
     [Fact]
-    public void 파싱_성공시_true와_결과값을_준다()
+    public void On_success_it_returns_true_and_the_parsed_value()
     {
         var parser = LambdaParameterModifiersDemo.IntParser;
 
@@ -18,7 +18,7 @@ public class LambdaParameterModifiersTests
     }
 
     [Fact]
-    public void 파싱_실패시_false와_기본값을_준다()
+    public void On_failure_it_returns_false_and_the_default_value()
     {
         var parser = LambdaParameterModifiersDemo.IntParser;
 

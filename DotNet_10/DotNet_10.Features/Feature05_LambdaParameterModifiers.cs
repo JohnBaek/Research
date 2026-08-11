@@ -1,26 +1,25 @@
 namespace DotNet_10.Features;
 
-/// <summary>문자열을 T로 파싱 시도하는 델리게이트 (out 매개변수 포함).</summary>
+/// <summary>Delegate that tries to parse text into T (with an out parameter).</summary>
 public delegate bool TryParse<T>(string text, out T result);
 
 /// <summary>
-/// [C# 14 / .NET 10] 수식어가 붙은 단순 람다 매개변수
-/// (Simple lambda parameters with modifiers)
+/// [C# 14 / .NET 10] Simple lambda parameters with modifiers.
 ///
-/// 이전엔 람다 매개변수에 ref/out/in/scoped 같은 수식어를 붙이려면,
-/// 반드시 매개변수의 "타입"까지 함께 적어야 했다:
+/// Before, to put a modifier (ref/out/in/scoped) on a lambda parameter,
+/// you also had to write the parameter "type":
 ///   (string text, out int result) => ...
 ///
-/// C# 14부터는 타입을 생략하고 수식어만 붙일 수 있다:
+/// From C# 14 you can drop the type and keep just the modifier:
 ///   (text, out result) => ...
 ///
-/// 타입은 대상 델리게이트 시그니처에서 추론된다.
+/// The types are inferred from the target delegate signature.
 /// </summary>
 public static class LambdaParameterModifiersDemo
 {
     /// <summary>
-    /// out 수식어를 유지하면서 매개변수 타입(string, int)은 생략했다.
-    /// 델리게이트 TryParse&lt;int&gt; 로부터 text=string, result=int 가 추론된다.
+    /// Keeps the 'out' modifier but omits the types (string, int).
+    /// TryParse&lt;int&gt; infers text=string and result=int.
     /// </summary>
     public static TryParse<int> IntParser =>
         (text, out result) => int.TryParse(text, out result);

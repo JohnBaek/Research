@@ -4,11 +4,11 @@ using DotNet_10.Features;
 
 namespace DotNet_10.Tests;
 
-// [Feature09] JsonSerializerOptions.Strict — 엄격 검증 동작 확인
+// [Feature09] JsonSerializerOptions.Strict - check the strict validation behavior
 public class JsonStrictOptionsTests
 {
     [Fact]
-    public void Strict_는_매핑안되는_속성이_있으면_예외()
+    public void Strict_throws_when_a_property_does_not_map()
     {
         var json = """{ "Name": "svc", "Port": 8080, "Unknown": true }""";
 
@@ -18,7 +18,7 @@ public class JsonStrictOptionsTests
     }
 
     [Fact]
-    public void Default_는_매핑안되는_속성을_조용히_무시한다()
+    public void Default_silently_ignores_an_unmapped_property()
     {
         var json = """{ "Name": "svc", "Port": 8080, "Unknown": true }""";
 
@@ -29,9 +29,9 @@ public class JsonStrictOptionsTests
     }
 
     [Fact]
-    public void Strict_는_대소문자가_다르면_예외()
+    public void Strict_throws_when_the_case_does_not_match()
     {
-        // Strict는 대소문자를 구분 → "name"은 "Name"에 매핑되지 않는다.
+        // Strict is case-sensitive -> "name" does not map to "Name".
         var json = """{ "name": "svc" }""";
 
         var act = () => JsonStrictDemo.DeserializeStrict(json);
