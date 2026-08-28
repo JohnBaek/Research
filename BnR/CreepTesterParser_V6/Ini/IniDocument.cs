@@ -16,6 +16,12 @@ public sealed class IniDocument
 
     public IReadOnlyDictionary<string, Dictionary<string, string>> Sections => _sections;
 
+    /// <summary>
+    /// Setting.ini 를 가져온다.
+    /// </summary>
+    /// <param name="path">Setting.ini 실제 파일경로</param>
+    /// <param name="encoding">인코딩 정보 (보통 EUC-KR)</param>
+    /// <returns></returns>
     public static IniDocument Load(string path, Encoding encoding)
     {
         var doc = new IniDocument();
@@ -24,20 +30,26 @@ public sealed class IniDocument
 
         // R&B 프로그램이 이 파일에 시험 진행값([SAVE_TIME] 등)을 계속 되쓴다.
         // 절대 프로그램의 쓰기를 막지 않도록 읽기 전용 + 공유 모드로 연다.
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete);
-        using var sr = new StreamReader(fs, encoding);
+        using FileStream fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using StreamReader streamReader = new StreamReader(fileStream, encoding);
 
-        string? rawLine;
-        while ((rawLine = sr.ReadLine()) is not null)
+        // 파일의 모든 라인을 읽어온다.
+        while (streamReader.ReadLine() is { } rawLine)
         {
-            var line = rawLine.Trim();
-            if (line.Length == 0) continue;
-            if (line.StartsWith(';') || line.StartsWith('#')) continue; // 주석
+            // 라인한줄을 읽어온다.
+            string line = rawLine.Trim();
+            
+            // 내용이 없을경우 제외
+            if (line.Length == 0) 
+                continue;
+            
+            // ; 또는 # 로 시작하는 라인일경우 제외
+            if (line.StartsWith(';') || line.StartsWith('#')) 
+                continue; 
 
             if (line.StartsWith('[') && line.EndsWith(']'))
             {
-                var name = line[1..^1].Trim();
+                string name = line[1..^1].Trim();
                 if (!doc._sections.TryGetValue(name, out current!))
                 {
                     current = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -46,12 +58,23 @@ public sealed class IniDocument
                 continue;
             }
 
-            var eq = line.IndexOf('=');
-            if (eq < 0) continue; // key=value 형식이 아니면 skip
-            var key = line[..eq].Trim();
-            var value = line[(eq + 1)..].Trim();
-            if (key.Length == 0) continue;
-            current[key] = value; // 중복 키는 마지막 값 채택
+            // '=' 가 포함된 라인인지?
+            int eq = line.IndexOf('=');
+            
+            // key=value 형식이 아니면 skip
+            if (eq < 0) 
+                continue; 
+            
+            // 해당 라인에 해다하는 값을 읽어온다.
+            string key = line[..eq].Trim();
+            string value = line[(eq + 1)..].Trim();
+            
+            // 키가 없을경우 제외
+            if (key.Length == 0) 
+                continue;
+            
+            // 중복 키는 마지막 값 채택
+            current[key] = value; 
         }
 
         return doc;

@@ -7,46 +7,74 @@ public sealed class ChannelInfo
 {
     public int Index { get; init; }
 
-    /// <summary>장비 IP (채널↔챔버 고정 식별키). [InputMode_Set] IP{n}</summary>
+    /// <summary>
+    /// 장비 IP (채널↔챔버 고정 식별키). [InputMode_Set] IP{n}
+    /// </summary>
     public string? Ip { get; init; }
 
-    /// <summary>작업자. USERNAME{n}</summary>
+    /// <summary>
+    /// 작업자. USERNAME{n}
+    /// </summary>
     public string? UserName { get; init; }
 
-    /// <summary>시험 시작일. EXPDATE{n}</summary>
+    /// <summary>
+    /// 시험 시작일. EXPDATE{n}
+    /// </summary>
     public string? ExpDate { get; init; }
 
-    /// <summary>설정 하중(kgf, 레버비 반영값). EXPLOAD{n}</summary>
+    /// <summary>
+    /// 설정 하중(kgf, 레버비 반영값). EXPLOAD{n}
+    /// </summary>
     public string? ExpLoad { get; init; }
 
-    /// <summary>목표 온도. EXPTEMP{n}</summary>
+    /// <summary>
+    /// 목표 온도. EXPTEMP{n}
+    /// </summary>
     public string? ExpTemp { get; init; }
 
-    /// <summary>표점거리 L0 (Strain 계산 기준). GAGELENGTH{n}</summary>
+    /// <summary>
+    /// 표점거리 L0 (Strain 계산 기준). GAGELENGTH{n}
+    /// </summary>
     public string? GageLength { get; init; }
 
-    /// <summary>응력(MPa). STRESS{n}</summary>
+    /// <summary>
+    /// 응력(MPa). STRESS{n}
+    /// </summary>
     public string? Stress { get; init; }
 
-    /// <summary>FILEPATH{n} (폴더)</summary>
+    /// <summary>
+    /// FILEPATH{n} (폴더)
+    /// </summary>
     public string? FilePath { get; init; }
 
-    /// <summary>FILENAME{n} (파일명)</summary>
+    /// <summary>
+    /// FILENAME{n} (파일명)
+    /// </summary>
     public string? FileName { get; init; }
 
-    /// <summary>SAVEFILEPATH{n} (실제 저장 전체 경로). 데이터 파일 읽기의 기준.</summary>
+    /// <summary>
+    /// SAVEFILEPATH{n} (실제 저장 전체 경로). 데이터 파일 읽기의 기준.
+    /// </summary>
     public string? SaveFilePath { get; init; }
 
-    /// <summary>저장 컬럼 비트마스크. SAVE_CONTENTS{n} (예: 1111111111 / 11111100)</summary>
+    /// <summary>
+    /// 저장 컬럼 비트마스크. SAVE_CONTENTS{n} (예: 1111111111 / 11111100)
+    /// </summary>
     public string? SaveContents { get; init; }
 
-    /// <summary>누적 시험시간(초). [SAVE_TIME] TIMER{n}. 시험 진행 중 계속 증가.</summary>
+    /// <summary>
+    /// 누적 시험시간(초). [SAVE_TIME] TIMER{n}. 시험 진행 중 계속 증가.
+    /// </summary>
     public double? TestTimerSec { get; init; }
 
-    /// <summary>누적 저장 데이터 수. [SAVE_TIME] DATA{n}. 시험 진행 중 계속 증가.</summary>
+    /// <summary>
+    /// 누적 저장 데이터 수. [SAVE_TIME] DATA{n}. 시험 진행 중 계속 증가.
+    /// </summary>
     public long? DataCount { get; init; }
 
-    /// <summary>표시/데이터 읽기에 사용할 전체 경로. SAVEFILEPATH 우선, 없으면 FILEPATH+FILENAME 조합.</summary>
+    /// <summary>
+    /// 표시/데이터 읽기에 사용할 전체 경로. SAVEFILEPATH 우선, 없으면 FILEPATH+FILENAME 조합.
+    /// </summary>
     public string? ResolvedFullPath
     {
         get
