@@ -13,6 +13,9 @@ public sealed class AppConfig
     public required string Environment { get; init; }
     public required string SettingFilePath { get; init; }
 
+    /// <summary>마지막 데이터가 이 시간(초) 이내면 '동작중'. 미지정 시 1800초(30분).</summary>
+    public int RunningFreshnessSeconds { get; init; } = 1800;
+
     public static AppConfig Load()
     {
         var baseDir = AppContext.BaseDirectory;
@@ -26,7 +29,15 @@ public sealed class AppConfig
         if (!merged.TryGetValue("SettingFilePath", out var settingPath) || string.IsNullOrWhiteSpace(settingPath))
             throw new InvalidOperationException("appsettings.json 에 SettingFilePath 값이 없습니다.");
 
-        return new AppConfig { Environment = env, SettingFilePath = settingPath };
+        var freshness = merged.TryGetValue("RunningFreshnessSeconds", out var fs) && int.TryParse(fs, out var f) && f > 0
+            ? f : 1800;
+
+        return new AppConfig
+        {
+            Environment = env,
+            SettingFilePath = settingPath,
+            RunningFreshnessSeconds = freshness,
+        };
     }
 
     private static void MergeFrom(Dictionary<string, string> target, string path)
@@ -36,8 +47,13 @@ public sealed class AppConfig
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
         foreach (var prop in doc.RootElement.EnumerateObject())
         {
-            if (prop.Value.ValueKind == JsonValueKind.String)
-                target[prop.Name] = prop.Value.GetString() ?? "";
+            target[prop.Name] = prop.Value.ValueKind switch
+            {
+                JsonValueKind.String => prop.Value.GetString() ?? "",
+                JsonValueKind.Number => prop.Value.GetRawText(),
+                JsonValueKind.True or JsonValueKind.False => prop.Value.GetRawText(),
+                _ => target.TryGetValue(prop.Name, out var existing) ? existing : "",
+            };
         }
     }
 }

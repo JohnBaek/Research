@@ -48,6 +48,10 @@ public sealed class CsvPeekReader
         return new CsvPeek(path, fi.Length, fi.LastWriteTime, header, first, last);
     }
 
+    /// <summary>파일이 없으면 null, 있으면 마지막 비어있지 않은 한 줄. (상태 감시용 경량 읽기)</summary>
+    public string? ReadLastLineOrNull(string path)
+        => File.Exists(path) ? ReadLastNonEmptyLine(path) : null;
+
     private static string? ReadNextNonEmpty(StreamReader sr)
     {
         string? line;

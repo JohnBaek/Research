@@ -15,6 +15,7 @@ public sealed class SettingReader
     private const string SecInput = "InputMode_Set";
     private const string SecSave = "SAVE_MODE";
     private const string SecSetup = "SETUP";
+    private const string SecSaveTime = "SAVE_TIME";
 
     /// <summary>파일이 없으면 <see cref="FileNotFoundException"/>.</summary>
     public CreepSetting Read(string path)
@@ -43,6 +44,8 @@ public sealed class SettingReader
                 FileName = ini.Get(SecSave, $"FILENAME{n}"),
                 SaveFilePath = ini.Get(SecSave, $"SAVEFILEPATH{n}"),
                 SaveContents = ini.Get(SecSave, $"SAVE_CONTENTS{n}"),
+                TestTimerSec = ParseDouble(ini.Get(SecSaveTime, $"TIMER{n}")),
+                DataCount = ParseLong(ini.Get(SecSaveTime, $"DATA{n}")),
             });
         }
 
@@ -61,4 +64,10 @@ public sealed class SettingReader
 
     private static int? ParseInt(string? s)
         => int.TryParse(s, out var v) ? v : null;
+
+    private static double? ParseDouble(string? s)
+        => double.TryParse(s, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+
+    private static long? ParseLong(string? s)
+        => long.TryParse(s, out var v) ? v : null;
 }

@@ -9,9 +9,13 @@ internal static class Program
 {
     private static void Main(string[] args)
     {
-        // CP949(EUC-KR) 코드페이지 등록 (Setting.ini 한글 디코딩용) + 콘솔 한글 출력.
+        // CP949(EUC-KR) 코드페이지 등록 (Setting.ini 한글 디코딩용).
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        Console.OutputEncoding = Encoding.UTF8;
+
+        // 콘솔 한글 출력. 일부 환경(출력 리다이렉트/특정 콘솔)에서는 설정이 실패할 수 있어
+        // 예외를 무시한다. (인코딩 설정 실패가 프로그램을 죽이면 안 됨)
+        try { Console.OutputEncoding = Encoding.UTF8; }
+        catch (Exception ex) { Console.WriteLine($"(콘솔 출력 인코딩 설정 생략: {ex.Message})"); }
 
         var csv = new CsvPeekReader();
 
@@ -22,7 +26,21 @@ internal static class Program
             return;
         }
 
+        // 테스트용: --activity <csv경로> 로 마지막 행 PC_TIME 파싱/경과 확인.
+        if (args is ["--activity", var actPath, ..])
+        {
+            var lastLine = csv.ReadLastLineOrNull(actPath);
+            var pcTime = CsvActivitySource.ParsePcTime(lastLine?.Split(',', 2)[0].Trim());
+            Console.WriteLine($"파일   : {actPath}");
+            Console.WriteLine($"마지막 : {lastLine}");
+            Console.WriteLine($"PC_TIME: {(pcTime is null ? "(파싱 실패)" : pcTime.Value.ToString("yyyy-MM-dd HH:mm:ss"))}");
+            if (pcTime is not null)
+                Console.WriteLine($"경과   : {FormatAge(DateTime.Now - pcTime.Value)}");
+            return;
+        }
+
         AppConfig config;
+        var isStatusTest = args is ["--status-test", ..];
         try
         {
             config = AppConfig.Load();
@@ -34,6 +52,13 @@ internal static class Program
         }
 
         var reader = new SettingReader();
+
+        // 테스트용: 정적 파일로 2틱 렌더링해 파싱/표시 검증 후 종료.
+        if (isStatusTest)
+        {
+            RunStatusMonitorTest(reader, csv, config);
+            return;
+        }
 
         // 입력이 리다이렉트된(비대화형) 환경에서는 ReadKey 를 쓸 수 없으므로
         // 설정 요약(메뉴 1)만 1회 출력하고 종료한다. (파이프/CI 실행 대비)
@@ -60,6 +85,10 @@ internal static class Program
                     ShowFileRead(reader, csv, config.SettingFilePath);
                     break;
 
+                case ConsoleKey.D3 or ConsoleKey.NumPad3:
+                    RunStatusMonitor(reader, csv, config);
+                    break;
+
                 case ConsoleKey.D0 or ConsoleKey.NumPad0 or ConsoleKey.Escape or ConsoleKey.Q:
                     Console.WriteLine("종료합니다.");
                     return;
@@ -77,7 +106,7 @@ internal static class Program
 
     private static void PrintMenu(AppConfig config)
     {
-        Console.Clear();
+        try { Console.Clear(); } catch { /* 콘솔 없는 환경 방어 */ }
         Console.WriteLine("========================================");
         Console.WriteLine("  Creep Tester Parser V6");
         Console.WriteLine("========================================");
@@ -86,7 +115,8 @@ internal static class Program
         Console.WriteLine($"  파일 존재 여부    : {(File.Exists(config.SettingFilePath) ? "있음" : "없음(!)")}");
         Console.WriteLine("----------------------------------------");
         Console.WriteLine("  [1] 설정 파일 읽기 (활성 채널/저장 폴더/주요 설정)");
-        Console.WriteLine("  [2] 데이터 파일 읽기            (다음 단계)");
+        Console.WriteLine("  [2] 데이터 파일 읽기 (헤더/첫 행/끝 행)");
+        Console.WriteLine("  [3] 실시간 상태 감시 (1초 갱신 · 동작중/정지중)");
         Console.WriteLine("  [0] 종료 (Esc / Q)");
         Console.WriteLine("----------------------------------------");
         Console.Write("  선택: ");
@@ -239,6 +269,105 @@ internal static class Program
             WriteWarn("  데이터 행이 없습니다 (헤더만 존재).");
         }
         Console.WriteLine("======================================================");
+    }
+
+    private static void RunStatusMonitor(SettingReader reader, CsvPeekReader csv, AppConfig config)
+    {
+        var activitySource = new CsvActivitySource(csv);
+        var monitor = new StatusMonitor(TimeSpan.FromSeconds(config.RunningFreshnessSeconds));
+        long tick = 0;
+
+        while (true)
+        {
+            // 키 입력 확인 (Esc/Q 로 종료)
+            while (Console.KeyAvailable)
+            {
+                var k = Console.ReadKey(intercept: true).Key;
+                if (k is ConsoleKey.Escape or ConsoleKey.Q) return;
+            }
+
+            tick++;
+            var now = DateTime.Now;
+
+            try
+            {
+                var setting = reader.Read(config.SettingFilePath);
+                var activity = activitySource.GetLastActivity(setting);
+                var rows = monitor.Evaluate(setting.ActiveChannels, activity, now);
+                RenderMonitor(rows, now, tick, config.RunningFreshnessSeconds);
+            }
+            catch (Exception ex)
+            {
+                try { Console.Clear(); } catch { /* 무시 */ }
+                WriteError($"상태 감시 실패: {ex.Message} (다음 틱에 재시도)");
+            }
+
+            // ~1초 대기하되 키 입력에 즉시 반응하도록 잘게 쪼갬.
+            for (var i = 0; i < 10; i++)
+            {
+                if (Console.KeyAvailable) break;
+                Thread.Sleep(100);
+            }
+        }
+    }
+
+    // 정적 파일로 1회 렌더링(파싱/표시 검증용).
+    private static void RunStatusMonitorTest(SettingReader reader, CsvPeekReader csv, AppConfig config)
+    {
+        var activitySource = new CsvActivitySource(csv);
+        var monitor = new StatusMonitor(TimeSpan.FromSeconds(config.RunningFreshnessSeconds));
+        var now = DateTime.Now;
+        var setting = reader.Read(config.SettingFilePath);
+        var activity = activitySource.GetLastActivity(setting);
+        RenderMonitor(monitor.Evaluate(setting.ActiveChannels, activity, now), now, 1, config.RunningFreshnessSeconds);
+    }
+
+    private static void RenderMonitor(IReadOnlyList<StatusMonitor.Row> rows, DateTime now, long tick, int freshnessSec)
+    {
+        try { Console.Clear(); } catch { /* 무시 */ }
+
+        var running = rows.Count(r => r.State == StatusMonitor.RunState.Running);
+        var stopped = rows.Count(r => r.State == StatusMonitor.RunState.Stopped);
+        var nodata = rows.Count(r => r.State == StatusMonitor.RunState.NoData);
+
+        Console.WriteLine("==================== 실시간 상태 감시 ====================");
+        Console.WriteLine($"  갱신시각: {now:yyyy-MM-dd HH:mm:ss}   (틱 #{tick})   종료: Esc / Q");
+        Console.WriteLine($"  동작중 {running} · 정지중 {stopped} · 파일없음 {nodata} · 전체 {rows.Count}");
+        Console.WriteLine($"  판정기준: 마지막 데이터가 {freshnessSec}초 이내면 동작중 (CSV PC_TIME)");
+        Console.WriteLine("----------------------------------------------------------");
+        Console.WriteLine("  CH  IP               마지막 데이터        경과       상태");
+
+        foreach (var r in rows)
+        {
+            var last = r.LastActivity?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-";
+            var age = FormatAge(r.Age);
+
+            Console.Write($"  {r.Index:D2}  {r.Ip ?? "-",-15}  {last,-19}  {age,-8}  ");
+
+            var (text, color) = r.State switch
+            {
+                StatusMonitor.RunState.Running => ("● 동작중", ConsoleColor.Green),
+                StatusMonitor.RunState.Stopped => ("○ 정지중", ConsoleColor.DarkGray),
+                _ => ("- 파일없음", ConsoleColor.DarkGray),
+            };
+            var prev = Console.ForegroundColor;
+            Console.ForegroundColor = color;
+            Console.WriteLine(text);
+            Console.ForegroundColor = prev;
+        }
+
+        Console.WriteLine("==========================================================");
+    }
+
+    private static string FormatAge(TimeSpan? age)
+    {
+        if (age is null) return "-";
+        var s = age.Value.TotalSeconds;
+        if (s < 0) return "0초";
+        if (s < 60) return $"{s:0}초 전";
+        if (s < 3600) return $"{s / 60:0}분 전";
+        if (s < 86400) return $"{s / 3600:0}시간 전";
+        return $"{s / 86400:0}일 전";
     }
 
     private static string GetWindowsFileName(string windowsPath)

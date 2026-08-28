@@ -7,6 +7,14 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
+    <!-- 퍼블리시(-r <RID> 지정 시)에만 적용되는 단일 파일 옵션. build/run 에는 영향 없음. -->
+    <PropertyGroup>
+        <PublishSingleFile>true</PublishSingleFile>
+        <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+        <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+        <DebugType>embedded</DebugType> <!-- 별도 .pdb 파일 생성 안 함 -->
+    </PropertyGroup>
+
     <ItemGroup>
       <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.11" />
     </ItemGroup>
@@ -17,6 +25,8 @@
       </None>
       <None Update="appsettings.development.json">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <!-- 개발용(맥 경로). 배포본에는 포함하지 않는다. -->
+        <CopyToPublishDirectory>Never</CopyToPublishDirectory>
       </None>
     </ItemGroup>
 

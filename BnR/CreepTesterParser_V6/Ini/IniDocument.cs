@@ -22,7 +22,14 @@ public sealed class IniDocument
         var current = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         doc._sections[""] = current; // 섹션 헤더 이전에 나오는 키를 위한 기본 버킷
 
-        foreach (var rawLine in File.ReadLines(path, encoding))
+        // R&B 프로그램이 이 파일에 시험 진행값([SAVE_TIME] 등)을 계속 되쓴다.
+        // 절대 프로그램의 쓰기를 막지 않도록 읽기 전용 + 공유 모드로 연다.
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        using var sr = new StreamReader(fs, encoding);
+
+        string? rawLine;
+        while ((rawLine = sr.ReadLine()) is not null)
         {
             var line = rawLine.Trim();
             if (line.Length == 0) continue;

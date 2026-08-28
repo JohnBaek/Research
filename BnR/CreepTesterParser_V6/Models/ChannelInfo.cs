@@ -40,6 +40,12 @@ public sealed class ChannelInfo
     /// <summary>저장 컬럼 비트마스크. SAVE_CONTENTS{n} (예: 1111111111 / 11111100)</summary>
     public string? SaveContents { get; init; }
 
+    /// <summary>누적 시험시간(초). [SAVE_TIME] TIMER{n}. 시험 진행 중 계속 증가.</summary>
+    public double? TestTimerSec { get; init; }
+
+    /// <summary>누적 저장 데이터 수. [SAVE_TIME] DATA{n}. 시험 진행 중 계속 증가.</summary>
+    public long? DataCount { get; init; }
+
     /// <summary>표시/데이터 읽기에 사용할 전체 경로. SAVEFILEPATH 우선, 없으면 FILEPATH+FILENAME 조합.</summary>
     public string? ResolvedFullPath
     {
