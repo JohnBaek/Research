@@ -2,10 +2,18 @@
 // (Marker interface - it just carries the response type.)
 public interface IRequest<TResponse>;
 
-// Handles exactly one request type and produces its response.
-public interface IRequestHandler<TRequest, TResponse>
-    where TRequest : IRequest<TResponse>
+/// <summary>
+/// 
+/// </summary>
+/// <typeparam name="TRequest"></typeparam>
+/// <typeparam name="TResponse"></typeparam>
+public interface IRequestHandler<TRequest, TResponse> where TRequest : IRequest<TResponse>
 {
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="request"></param>
+    /// <returns></returns>
     TResponse Handle(TRequest request);
 }
 

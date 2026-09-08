@@ -106,7 +106,6 @@ internal static class Program
 
     private static void PrintMenu(AppConfig config)
     {
-        try { Console.Clear(); } catch { /* 콘솔 없는 환경 방어 */ }
         Console.WriteLine("========================================");
         Console.WriteLine("  Creep Tester Parser V6");
         Console.WriteLine("========================================");

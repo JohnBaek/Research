@@ -10,22 +10,37 @@ namespace CreepTesterParser_V6.Services;
 /// </summary>
 public sealed class CsvActivitySource
 {
-    private const string PcTimeFormat = "yyMMdd_HHmmss"; // 예: 260706_165628 → 2026-07-06 16:56:28
+    /// <summary>
+    /// 예: 260706_165628 → 2026-07-06 16:56:28
+    /// </summary>
+    private const string PcTimeFormat = "yyMMdd_HHmmss";  
 
+    /// <summary>
+    /// .CSV Reader 오브젝트
+    /// </summary>
     private readonly CsvPeekReader _csv;
 
+    /// <summary>
+    /// 생성자
+    /// </summary>
+    /// <param name="csv"></param>
     public CsvActivitySource(CsvPeekReader csv) => _csv = csv;
 
+    /// <summary>
+    /// 마지막 행의 날짜와 Raw 번호 를 읽는다.
+    /// </summary>
+    /// <param name="setting"></param>
+    /// <returns></returns>
     public IReadOnlyDictionary<int, DateTime?> GetLastActivity(CreepSetting setting)
     {
-        var map = new Dictionary<int, DateTime?>(setting.ActiveChannels.Count);
+        Dictionary<int, DateTime?> map = new Dictionary<int, DateTime?>(setting.ActiveChannels.Count);
         foreach (var ch in setting.ActiveChannels)
         {
             DateTime? lastTime = null;
-            var path = ch.ResolvedFullPath;
+            string? path = ch.ResolvedFullPath;
             if (path is not null)
             {
-                var line = _csv.ReadLastLineOrNull(path);
+                string? line = _csv.ReadLastLineOrNull(path);
                 lastTime = ParsePcTime(FirstField(line));
             }
             map[ch.Index] = lastTime;
@@ -33,9 +48,18 @@ public sealed class CsvActivitySource
         return map;
     }
 
-    private static string? FirstField(string? line)
-        => line is null ? null : line.Split(',', 2)[0].Trim();
+    /// <summary>
+    /// 현재 첫번째 Field 인지 여부를 반환 한다.
+    /// </summary>
+    /// <param name="line"></param>
+    /// <returns></returns>
+    private static string? FirstField(string? line) => line?.Split(',', 2)[0].Trim();
 
+    /// <summary>
+    /// String 날짜 정보를 DateTime Nullable 로 반환 한다.
+    /// </summary>
+    /// <param name="s"></param>
+    /// <returns></returns>
     public static DateTime? ParsePcTime(string? s)
         => DateTime.TryParseExact(s, PcTimeFormat, CultureInfo.InvariantCulture,
             DateTimeStyles.None, out var dt) ? dt : null;
