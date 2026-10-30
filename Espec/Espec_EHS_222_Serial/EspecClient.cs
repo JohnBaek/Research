@@ -1,79 +1,114 @@
-using System.IO.Ports;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Espec_EHS_222_Serial;
 
-/// <summary>
-/// ESPEC Platinous J 시리즈 프로토콜 계층(전송 방식과 무관).
-/// 명령 형식 : "주소,메인명령[,옵션파라미터]" + 구분자
-/// 응답 형식 : "응답데이터"  (실패 시 "NA:에러메시지")  — STD 프로토콜, 에코백 없음.
-/// </summary>
-public sealed class EspecClient : IDisposable
+public enum ReplyKind { Valid, NoData, EchoOnly, InvalidBytes, Incomplete, DeviceError, Unverified, TransportError }
+public sealed record EspecResult(string Command, string Raw, ReplyKind Kind, string Detail, WireCapture Capture)
 {
-    private readonly IEspecTransport _transport;
-    private readonly int _address;
+    public bool Ok => Kind == ReplyKind.Valid;
+}
 
-    /// <summary>같은 주소로 연속 명령 전송 시 최소 대기(모니터 명령 0.2초 이상 권장).</summary>
+/// <summary>HAST EHS standard mode. Manual 4013304025610.</summary>
+public sealed class EspecClient(IEspecTransport transport, int address) : IDisposable
+{
+    private int _address = CheckAddress(address);
+    public int Address { get => _address; set => _address = CheckAddress(value); }
+    public string Delimiter
+    {
+        get => transport.Delimiter;
+        set
+        {
+            if (value is not ("\r" or "\n" or "\r\n")) throw new ArgumentException("CR/LF/CRLF만 허용");
+            transport.Delimiter = value;
+        }
+    }
     public int MonitorDelayMs { get; init; } = 250;
+    public void Open() => transport.Open();
+    public string Describe() => transport.Describe();
 
-    public EspecClient(IEspecTransport transport, int address)
+    public EspecResult Query(string command, int windowMs = 2000)
     {
-        _transport = transport;
-        _address = address;
+        command = Normalize(command);
+        var capture = transport.Exchange($"{Address:00},{command}", windowMs);
+        Thread.Sleep(MonitorDelayMs);
+        return Analyze(command, capture);
     }
 
-    public void Open() => _transport.Open();
-
-    public string Describe() => _transport.Describe();
-
-    /// <summary>명령 전송 후 결과를 구조화해서 반환. 통신 오류는 예외 대신 결과에 담는다.</summary>
-    public EspecResult Query(string mainCommand)
+    // Explicit diagnostic only: E-BUS + Echo OFF. Preserve both capture windows.
+    public EspecResult QueryWithTrigger(string command, int windowMs = 2000)
     {
-        try
-        {
-            string frame = $"{_address:00},{mainCommand}"; // 주소는 01 처럼 2자리 표기
-            string raw = _transport.SendCommand(frame);
-            Thread.Sleep(MonitorDelayMs);                  // 사양서 권고 지연
-
-            bool isError = raw.StartsWith("NA:", StringComparison.OrdinalIgnoreCase);
-            return new EspecResult(mainCommand, raw, !isError,
-                isError ? raw[3..].Trim() : null);
-        }
-        catch (TimeoutException)
-        {
-            return new EspecResult(mainCommand, "", false, "응답 타임아웃(무응답)");
-        }
-        catch (Exception ex)
-        {
-            return new EspecResult(mainCommand, "", false, ex.Message);
-        }
+        command = Normalize(command);
+        var initial = transport.Exchange($"{Address:00},{command}", 500);
+        if (initial.Error is not null) return Analyze(command, initial);
+        Thread.Sleep(MonitorDelayMs);
+        var triggered = transport.Exchange($"{Address:00},G", windowMs, drain: false);
+        Thread.Sleep(MonitorDelayMs);
+        return Analyze(command, new WireCapture(
+            initial.Sent.Concat(triggered.Sent).ToArray(),
+            initial.Received.Concat(triggered.Received).ToArray(),
+            initial.Pending, triggered.Error));
     }
 
-    public void Dispose() => _transport.Dispose();
-}
+    private EspecResult Analyze(string command, WireCapture capture)
+    {
+        var bytes = capture.Received;
+        EspecResult Result(ReplyKind kind, string detail, string raw = "") =>
+            new(command, raw, kind, detail, capture);
+        if (capture.Error is not null) return Result(ReplyKind.TransportError, capture.Error);
+        if (bytes.Length == 0) return Result(ReplyKind.NoData, "수신 창 안에 0 bytes. 원인은 아직 미확정");
+        if (bytes.Any(b => b != 9 && b != 10 && b != 13 && (b < 32 || b > 126)))
+            return Result(ReplyKind.InvalidBytes, "비 ASCII/제어 바이트 수신. 정상 HAST 응답으로 판정 불가");
 
-/// <summary>시리얼(RS-485 직결) 설정. 챔버 패널 통신설정과 일치시켜야 한다.</summary>
-public sealed record SerialConnectionSettings
-{
-    public required string PortName { get; init; }
-    public int BaudRate { get; init; } = 9600;              // 4800 / 9600 / 19200
-    public Parity Parity { get; init; } = Parity.None;      // None / Even / Odd
-    public int DataBits { get; init; } = 8;                 // 7 / 8
-    public StopBits StopBits { get; init; } = StopBits.One; // One / Two
-    public string Delimiter { get; init; } = "\r\n";        // 챔버 설정과 동일(CR / CRLF 등)
-    public int ReadTimeoutMs { get; init; } = 2000;
-    public int WriteTimeoutMs { get; init; } = 2000;
-}
+        string text = Encoding.ASCII.GetString(bytes);
+        string[] parts = text.Split(Delimiter, StringSplitOptions.None);
+        var complete = parts.Take(parts.Length - 1).Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
+        bool Echo(string line) =>
+            line.Equals($"{Address:00},{command}", StringComparison.OrdinalIgnoreCase) ||
+            line.Equals($"{Address},{command}", StringComparison.OrdinalIgnoreCase) ||
+            line.Equals($"{Address:00},G", StringComparison.OrdinalIgnoreCase) ||
+            line.Equals($"{Address},G", StringComparison.OrdinalIgnoreCase);
+        var replies = complete.Where(s => !Echo(s)).ToArray();
+        if (parts[^1].Length != 0)
+            return Result(ReplyKind.Incomplete, "수신은 있었으나 설정 종결문자로 끝나지 않음", text);
+        if (replies.Length == 0)
+            return Result(ReplyKind.EchoOnly, "완성된 장비 데이터 응답 없이 에코/빈 프레임만 수신", text);
 
-/// <summary>TCP(RS-485↔Ethernet 컨버터) 설정.</summary>
-public sealed record TcpConnectionSettings
-{
-    public required string Host { get; init; }              // 컨버터 IP
-    public required int Port { get; init; }                 // 컨버터 TCP 포트
-    public string Delimiter { get; init; } = "\r\n";        // 챔버 설정과 동일해야 함
-    public int ConnectTimeoutMs { get; init; } = 3000;
-    public int ReadTimeoutMs { get; init; } = 2000;
-    public int WriteTimeoutMs { get; init; } = 2000;
-}
+        foreach (string reply in replies)
+        {
+            if (Regex.IsMatch(reply, @"^NA\s*:", RegexOptions.IgnoreCase))
+                return Result(ReplyKind.DeviceError, "장비 오류 응답", reply);
+        }
+        if (replies.Length != 1)
+            return Result(ReplyKind.Unverified, "데이터 응답이 여러 줄임. 지연 응답/프레임 형식 확인 필요", text);
+        string raw = replies[0];
+        if (command.Equals("ROM?", StringComparison.OrdinalIgnoreCase) &&
+            Regex.IsMatch(raw, @"^EHS[-A-Z0-9()]*\s+Ver\.?\s*\d+(?:\.\d+)+$", RegexOptions.IgnoreCase))
+            return Result(ReplyKind.Valid, "HAST 모델/버전 응답 형식 확인", raw);
+        if (command.Equals("MON?", StringComparison.OrdinalIgnoreCase) && TryMonitor(raw, out _))
+            return Result(ReplyKind.Valid, "HAST 온습도/모드/알람 응답 형식 확인", raw);
+        return Result(ReplyKind.Unverified, "ASCII 프레임 수신. 명령별 정상 형식은 확인되지 않음", raw);
+    }
 
-/// <summary>명령 1건의 실행 결과.</summary>
-public sealed record EspecResult(string Command, string Raw, bool Ok, string? Error);
+    public static bool TryMonitor(string raw, out string[] fields)
+    {
+        fields = raw.Split(',', StringSplitOptions.TrimEntries); // Keep empty fields.
+        return fields.Length == 4 &&
+            double.TryParse(fields[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double t) && double.IsFinite(t) &&
+            double.TryParse(fields[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double h) && double.IsFinite(h) && h is >= 0 and <= 100 &&
+            fields[2] is "OFF" or "CONSTANT" or "RUN" &&
+            int.TryParse(fields[3], NumberStyles.None, CultureInfo.InvariantCulture, out int count) && count >= 0;
+    }
+
+    private static string Normalize(string command)
+    {
+        command = command.Trim().ToUpperInvariant();
+        if (command.Length == 0 || command.Any(c => c < 32 || c > 126) || !command.Contains('?'))
+            throw new ArgumentException("조회 명령만 입력하세요. 예: ROM? / MON?");
+        return command;
+    }
+    private static int CheckAddress(int value) => value is >= 1 and <= 16
+        ? value : throw new ArgumentOutOfRangeException(nameof(value), "주소는 1~16");
+    public void Dispose() => transport.Dispose();
+}

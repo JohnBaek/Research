@@ -1,169 +1,108 @@
-using System.IO.Ports;
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Text;
 
 namespace Espec_EHS_222_Serial;
 
-/// <summary>
-/// 물리 전송 계층 추상화. 프레임(주소,명령)을 보내고 구분자까지의 응답 한 줄을 받는다.
-/// 시리얼(RS-485 직결)이든 TCP(RS-485↔Ethernet 컨버터)든 이 계약만 지키면 된다.
-/// </summary>
+public sealed record WireCapture(byte[] Sent, byte[] Received, byte[] Pending, string? Error);
+
 public interface IEspecTransport : IDisposable
 {
+    string Delimiter { get; set; }
     void Open();
-
-    /// <summary>frame(구분자 미포함)에 구분자를 붙여 전송하고, 구분자까지의 응답을 Trim해서 반환.</summary>
-    string SendCommand(string frame);
-
     string Describe();
+    WireCapture Exchange(string frame, int windowMs, bool drain = true);
 }
 
-/// <summary>RS-485 시리얼 포트 직결.</summary>
-public sealed class SerialEspecTransport : IEspecTransport
+/// <summary>TCP transparent converter. UART settings belong to the converter.</summary>
+public sealed class TcpEspecTransport(TcpConnectionSettings settings) : IEspecTransport
 {
-    private readonly SerialPort _port;
-    private readonly SerialConnectionSettings _s;
-
-    public SerialEspecTransport(SerialConnectionSettings s)
-    {
-        _s = s;
-        _port = new SerialPort(s.PortName, s.BaudRate, s.Parity, s.DataBits, s.StopBits)
-        {
-            Handshake = Handshake.None,       // Xon/Xoff, Si/So 없음(사양서 고정)
-            ReadTimeout = s.ReadTimeoutMs,
-            WriteTimeout = s.WriteTimeoutMs,
-            NewLine = s.Delimiter,
-            Encoding = Encoding.ASCII,
-        };
-    }
-
-    public void Open()
-    {
-        if (!_port.IsOpen) _port.Open();
-        _port.DiscardInBuffer();
-        _port.DiscardOutBuffer();
-    }
-
-    public string SendCommand(string frame)
-    {
-        _port.DiscardInBuffer();
-        _port.WriteLine(frame);           // NewLine(구분자) 자동 부착
-        return _port.ReadLine().Trim();   // 타임아웃 시 TimeoutException
-    }
-
-    public string Describe() =>
-        $"Serial {_s.PortName} @ {_s.BaudRate}bps {_s.DataBits}"
-        + $"{ParityShort(_s.Parity)}{(_s.StopBits == StopBits.Two ? "2" : "1")}, "
-        + $"구분자={Escape(_s.Delimiter)}";
-
-    public void Dispose()
-    {
-        if (_port.IsOpen) _port.Close();
-        _port.Dispose();
-    }
-
-    private static string ParityShort(Parity p) =>
-        p switch { Parity.Even => "E", Parity.Odd => "O", _ => "N" };
-
-    private static string Escape(string s) => s.Replace("\r", "\\r").Replace("\n", "\\n");
-}
-
-/// <summary>
-/// RS-485↔Ethernet 컨버터(TCP 서버 모드)에 TCP 클라이언트로 접속.
-/// 컨버터는 소켓으로 받은 바이트를 그대로 RS-485로 흘려보내므로 페이로드는 시리얼과 동일하다.
-/// </summary>
-public sealed class TcpEspecTransport : IEspecTransport
-{
-    private readonly TcpConnectionSettings _s;
-    private readonly byte[] _delimBytes;
     private TcpClient? _client;
     private NetworkStream? _stream;
-
-    public TcpEspecTransport(TcpConnectionSettings s)
-    {
-        _s = s;
-        _delimBytes = Encoding.ASCII.GetBytes(s.Delimiter);
-    }
+    public string Delimiter { get; set; } = settings.Delimiter;
+    public Action<string, byte[]>? Trace { get; set; }
+    private const int Limit = 16384;
 
     public void Open()
     {
-        _client = new TcpClient { NoDelay = true };
-        if (!_client.ConnectAsync(_s.Host, _s.Port).Wait(_s.ConnectTimeoutMs))
-        {
-            _client.Dispose();
-            _client = null;
-            throw new TimeoutException($"{_s.Host}:{_s.Port} 접속 타임아웃");
-        }
-        _stream = _client.GetStream();
-        _stream.ReadTimeout = _s.ReadTimeoutMs;
-        _stream.WriteTimeout = _s.WriteTimeoutMs;
-        DrainInput();
-    }
-
-    public string SendCommand(string frame)
-    {
-        if (_stream is null) throw new InvalidOperationException("연결되지 않았습니다.");
-
-        DrainInput();
-        byte[] payload = Encoding.ASCII.GetBytes(frame + _s.Delimiter);
-        _stream.Write(payload, 0, payload.Length);
-        return ReadUntilDelimiter();
-    }
-
-    /// <summary>구분자가 나타날 때까지 1바이트씩 누적해서 읽는다.</summary>
-    private string ReadUntilDelimiter()
-    {
-        var buffer = new List<byte>(64);
-        var one = new byte[1];
+        Dispose();
+        var client = new TcpClient { NoDelay = true };
         try
         {
-            while (true)
+            using var timeout = new CancellationTokenSource(settings.ConnectTimeoutMs);
+            client.ConnectAsync(settings.Host, settings.Port, timeout.Token).AsTask().GetAwaiter().GetResult();
+            _client = client;
+            _stream = client.GetStream();
+            _stream.WriteTimeout = settings.WriteTimeoutMs;
+        }
+        catch { client.Dispose(); throw; }
+    }
+
+    public WireCapture Exchange(string frame, int windowMs, bool drain = true)
+    {
+        if (windowMs <= 0) throw new ArgumentOutOfRangeException(nameof(windowMs));
+        if (string.IsNullOrEmpty(Delimiter)) throw new InvalidOperationException("종결문자가 비어 있습니다.");
+        byte[] sent = Encoding.ASCII.GetBytes(frame + Delimiter);
+        var received = new List<byte>();
+        var pending = new List<byte>();
+        string? error = null;
+        try
+        {
+            var stream = _stream ?? throw new InvalidOperationException("연결되지 않았습니다. :reconnect 사용");
+            byte[] buffer = new byte[512];
+            if (drain)
             {
-                int n = _stream!.Read(one, 0, 1);
-                if (n == 0) // 상대가 연결 종료
-                    throw new IOException("연결이 닫혔습니다(응답 미완료).");
-                buffer.Add(one[0]);
-                if (EndsWith(buffer, _delimBytes))
+                while (stream.DataAvailable && pending.Count < Limit)
                 {
-                    buffer.RemoveRange(buffer.Count - _delimBytes.Length, _delimBytes.Length);
-                    break;
+                    int n = stream.Read(buffer, 0, Math.Min(buffer.Length, Limit - pending.Count));
+                    if (n == 0) throw new IOException("TCP 연결 종료");
+                    pending.AddRange(buffer.AsSpan(0, n).ToArray());
                 }
+                if (pending.Count > 0) Trace?.Invoke("이전/비동기 RX", pending.ToArray());
+                if (pending.Count == Limit) throw new IOException("이전 수신 데이터 한도 초과");
             }
+
+            Trace?.Invoke("TX", sent);
+            stream.Write(sent);
+            var clock = Stopwatch.StartNew();
+            while (clock.ElapsedMilliseconds < windowMs && received.Count < Limit)
+            {
+                stream.ReadTimeout = Math.Max(1, Math.Min(100, windowMs - (int)clock.ElapsedMilliseconds));
+                try
+                {
+                    int n = stream.Read(buffer, 0, Math.Min(buffer.Length, Limit - received.Count));
+                    if (n == 0) { error = "TCP 상대가 연결을 종료했습니다. :reconnect 사용"; break; }
+                    received.AddRange(buffer.AsSpan(0, n).ToArray());
+                }
+                catch (IOException ex) when (ex.InnerException is SocketException se &&
+                    se.SocketErrorCode is SocketError.TimedOut or SocketError.WouldBlock) { }
+            }
+            if (received.Count == Limit) error = "수신 데이터 한도 초과";
         }
-        catch (IOException ex) when (ex.InnerException is SocketException se
-            && se.SocketErrorCode == SocketError.TimedOut)
+        catch (Exception ex) when (ex is IOException or SocketException or InvalidOperationException or ObjectDisposedException)
         {
-            // 클라이언트 상위 계층에서 통일되게 처리하도록 TimeoutException으로 변환.
-            throw new TimeoutException("응답 타임아웃(무응답)");
+            error = ex.Message;
         }
-
-        return Encoding.ASCII.GetString(buffer.ToArray()).Trim();
+        Trace?.Invoke("RX", received.ToArray());
+        return new WireCapture(sent, received.ToArray(), pending.ToArray(), error);
     }
 
-    private void DrainInput()
-    {
-        if (_stream is null) return;
-        while (_stream.DataAvailable)
-        {
-            var junk = new byte[256];
-            _ = _stream.Read(junk, 0, junk.Length);
-        }
-    }
-
-    private static bool EndsWith(List<byte> buf, byte[] suffix)
-    {
-        if (buf.Count < suffix.Length) return false;
-        for (int i = 0; i < suffix.Length; i++)
-            if (buf[buf.Count - suffix.Length + i] != suffix[i]) return false;
-        return true;
-    }
-
-    public string Describe() =>
-        $"TCP {_s.Host}:{_s.Port}, 구분자={_s.Delimiter.Replace("\r", "\\r").Replace("\n", "\\n")}";
-
+    public string Describe() => $"TCP {settings.Host}:{settings.Port}";
     public void Dispose()
     {
         _stream?.Dispose();
         _client?.Dispose();
+        _stream = null;
+        _client = null;
     }
+}
+
+public sealed record TcpConnectionSettings
+{
+    public required string Host { get; init; }
+    public required int Port { get; init; }
+    public string Delimiter { get; init; } = "\r\n";
+    public int ConnectTimeoutMs { get; init; } = 3000;
+    public int ReadTimeoutMs { get; init; } = 2000;
+    public int WriteTimeoutMs { get; init; } = 2000;
 }
